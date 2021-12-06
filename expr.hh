@@ -6,6 +6,7 @@
 
 #include "prod.hh"
 #include <string>
+#include <memory_resource>
 
 using std::shared_ptr;
 using std::vector;
@@ -31,7 +32,7 @@ struct case_expr : value_expr {
 struct funcall : value_expr {
   routine *proc;
   bool is_aggregate;
-  vector<shared_ptr<value_expr> > parms;
+  std::pmr::vector<shared_ptr<value_expr> > parms;
   void out(std::ostream &out) override;
   ~funcall() override { }
   funcall(prod *p, sqltype *type_constraint = 0, bool agg = 0);
@@ -52,7 +53,7 @@ struct atomic_subselect : value_expr {
 };
 
 struct const_expr: value_expr {
-  std::string expr;
+  std::pmr::string expr;
   const_expr(prod *p, sqltype *type_constraint = 0);
   void out(std::ostream &out) override { out << expr; }
   ~const_expr() override { }
@@ -67,7 +68,7 @@ struct column_reference: value_expr {
 
 struct coalesce : value_expr {
   const char *abbrev_;
-  vector<shared_ptr<value_expr> > value_exprs;
+  std::pmr::vector<shared_ptr<value_expr> > value_exprs;
   ~coalesce() override { };
   coalesce(prod *p, sqltype *type_constraint = 0, const char *abbrev = "coalesce");
   void out(std::ostream &out) override;
@@ -173,8 +174,8 @@ struct window_function : value_expr {
   virtual void out(std::ostream &out);
   ~window_function() override { }
   window_function(prod *p, sqltype *type_constraint);
-  vector<shared_ptr<column_reference> > partition_by;
-  vector<shared_ptr<column_reference> > order_by;
+  std::pmr::vector<shared_ptr<column_reference> > partition_by;
+  std::pmr::vector<shared_ptr<column_reference> > order_by;
   shared_ptr<funcall> aggregate;
   static bool allowed(prod *pprod);
   void accept(prod_visitor *v) override {

@@ -21,6 +21,14 @@ template<typename T> T& random_pick(std::vector<T>& container) {
   return container[pick(smith::rng)];
 }
 
+template<typename T> T& random_pick(std::pmr::vector<T>& container) {
+  if (container.empty())
+    throw std::runtime_error("No candidates available");
+
+  std::uniform_int_distribution<int> pick(0, container.size()-1);
+  return container[pick(smith::rng)];
+}
+
 template<typename I>
 I random_pick(I beg, I end) {
     if (beg == end)

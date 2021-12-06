@@ -258,7 +258,7 @@ struct update_stmt : modifying_stmt {
 
 struct when_clause : prod {
   bool matched;
-  shared_ptr<bool_expr> condition;  
+  shared_ptr<bool_expr> condition;
 //   shared_ptr<prod> merge_action;
   when_clause(struct merge_stmt *p);
   virtual ~when_clause() { }

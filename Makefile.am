@@ -17,7 +17,7 @@ endif
 
 sqlsmith_SOURCES = relmodel.cc schema.cc $(DUT)	 			\
     random.cc prod.cc expr.cc grammar.cc log.cc dump.cc impedance.cc	\
-    sqlsmith.cc
+    sqlsmith.cc util.cc
 
 sqlsmith_LDADD = $(LIBPQXX_LIBS) $(MONETDB_MAPI_LIBS) $(BOOST_REGEX_LIB) $(POSTGRESQL_LIBS)
 

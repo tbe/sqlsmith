@@ -18,21 +18,21 @@ shared_ptr<value_expr> value_expr::factory(prod *p, sqltype *type_constraint)
 {
   try {
     if (1 == d20() && p->level < d6() && window_function::allowed(p))
-      return make_shared<window_function>(p, type_constraint);
+      return make_alloc_shared<window_function>(p, type_constraint);
     else if (1 == d42() && p->level < d6())
-      return make_shared<coalesce>(p, type_constraint);
+      return make_alloc_shared<coalesce>(p, type_constraint);
     else if (1 == d42() && p->level < d6())
-      return make_shared<nullif>(p, type_constraint);
+      return make_alloc_shared<nullif>(p, type_constraint);
     else if (p->level < d6() && d6() == 1)
-      return make_shared<funcall>(p, type_constraint);
+      return make_alloc_shared<funcall>(p, type_constraint);
     else if (d12()==1)
-      return make_shared<atomic_subselect>(p, type_constraint);
+      return make_alloc_shared<atomic_subselect>(p, type_constraint);
     else if (p->level< d6() && d9()==1)
-      return make_shared<case_expr>(p, type_constraint);
+      return make_alloc_shared<case_expr>(p, type_constraint);
     else if (!p->scope->refs.empty() && d20() > 1)
-      return make_shared<column_reference>(p, type_constraint);
+      return make_alloc_shared<column_reference>(p, type_constraint);
     else
-      return make_shared<const_expr>(p, type_constraint);
+      return make_alloc_shared<const_expr>(p, type_constraint);
   } catch (runtime_error &e) {
   }
   p->retry();
@@ -51,7 +51,7 @@ case_expr::case_expr(prod *p, sqltype *type_constraint)
 	  concrete one for a better match. */
        if (true_expr->type->consistent(false_expr->type))
 	    true_expr = value_expr::factory(this, false_expr->type);
-       else 
+       else
 	    false_expr = value_expr::factory(this, true_expr->type);
   }
   type = true_expr->type;
@@ -97,28 +97,28 @@ shared_ptr<bool_expr> bool_expr::factory(prod *p)
 {
   try {
        if (p->level > d100())
-	    return make_shared<truth_value>(p);
+	    return make_alloc_shared<truth_value>(p);
        if(d6() < 4)
-	    return make_shared<comparison_op>(p);
+	    return make_alloc_shared<comparison_op>(p);
        else if (d6() < 4)
-	    return make_shared<bool_term>(p);
+	    return make_alloc_shared<bool_term>(p);
        else if (d6() < 4)
-	    return make_shared<null_predicate>(p);
+	    return make_alloc_shared<null_predicate>(p);
        else if (d6() < 4)
-	    return make_shared<truth_value>(p);
+	    return make_alloc_shared<truth_value>(p);
        else
-	    return make_shared<exists_predicate>(p);
-//     return make_shared<distinct_pred>(q);
+	    return make_alloc_shared<exists_predicate>(p);
+//     return make_alloc_shared<distinct_pred>(q);
   } catch (runtime_error &e) {
   }
   p->retry();
   return factory(p);
-     
+
 }
 
 exists_predicate::exists_predicate(prod *p) : bool_expr(p)
 {
-  subquery = make_shared<query_spec>(this, scope);
+  subquery = make_alloc_shared<query_spec>(this, scope);
 }
 
 void exists_predicate::accept(prod_visitor *v)
@@ -136,8 +136,8 @@ void exists_predicate::out(std::ostream &out)
 
 distinct_pred::distinct_pred(prod *p) : bool_binop(p)
 {
-  lhs = make_shared<column_reference>(this);
-  rhs = make_shared<column_reference>(this, lhs->type);
+  lhs = make_alloc_shared<column_reference>(this);
+  rhs = make_alloc_shared<column_reference>(this, lhs->type);
 }
 
 comparison_op::comparison_op(prod *p) : bool_binop(p)
@@ -161,7 +161,7 @@ comparison_op::comparison_op(prod *p) : bool_binop(p)
 }
 
 coalesce::coalesce(prod *p, sqltype *type_constraint, const char *abbrev)
-     : value_expr(p), abbrev_(abbrev)
+     : value_expr(p), abbrev_(abbrev),value_exprs(getAllocator<shared_ptr<value_expr>>())
 {
   auto first_expr = value_expr::factory(this, type_constraint);
   auto second_expr = value_expr::factory(this, first_expr->type);
@@ -171,7 +171,7 @@ coalesce::coalesce(prod *p, sqltype *type_constraint, const char *abbrev)
     retry();
     if (first_expr->type->consistent(second_expr->type))
       first_expr = value_expr::factory(this, second_expr->type);
-    else 
+    else
       second_expr = value_expr::factory(this, first_expr->type);
   }
   type = second_expr->type;
@@ -179,7 +179,7 @@ coalesce::coalesce(prod *p, sqltype *type_constraint, const char *abbrev)
   value_exprs.push_back(first_expr);
   value_exprs.push_back(second_expr);
 }
- 
+
 void coalesce::out(std::ostream &out)
 {
   out << "cast(" << abbrev_ << "(";
@@ -193,10 +193,10 @@ void coalesce::out(std::ostream &out)
 }
 
 const_expr::const_expr(prod *p, sqltype *type_constraint)
-    : value_expr(p)
+    : value_expr(p), expr(getAllocator<std::byte>())
 {
   type = type_constraint ? type_constraint : scope->schema->inttype;
-      
+
   if (type == scope->schema->inttype)
     expr = to_string(d100());
   else if (type == scope->schema->booltype)
@@ -208,7 +208,7 @@ const_expr::const_expr(prod *p, sqltype *type_constraint)
 }
 
 funcall::funcall(prod *p, sqltype *type_constraint, bool agg)
-  : value_expr(p), is_aggregate(agg)
+  : value_expr(p), is_aggregate(agg),parms(getAllocator<value_expr>())
 {
   if (type_constraint == scope->schema->internaltype)
     fail("cannot call functions involving internal type");
@@ -219,7 +219,7 @@ funcall::funcall(prod *p, sqltype *type_constraint, bool agg)
     : p->scope->schema->parameterless_routines_returning_type;
 
  retry:
-  
+
   if (!type_constraint) {
     proc = random_pick(idx.begin(), idx.end())->second;
   } else {
@@ -252,7 +252,7 @@ funcall::funcall(prod *p, sqltype *type_constraint, bool agg)
       retry();
       goto retry;
     }
-  
+
   for (auto argtype : proc->argtypes) {
     assert(argtype);
     auto expr = value_expr::factory(this, argtype);
@@ -324,7 +324,7 @@ void atomic_subselect::out(std::ostream &out)
     out << agg->ident() << "(" << col->name << ")";
   else
     out << col->name;
-  
+
   out << " from " << tab->ident();
 
   if (!agg)
@@ -338,7 +338,7 @@ void window_function::out(std::ostream &out)
 {
   indent(out);
   out << *aggregate << " over (partition by ";
-    
+
   for (auto ref = partition_by.begin(); ref != partition_by.end(); ref++) {
     out << **ref;
     if (ref+1 != partition_by.end())
@@ -346,7 +346,7 @@ void window_function::out(std::ostream &out)
   }
 
   out << " order by ";
-    
+
   for (auto ref = order_by.begin(); ref != order_by.end(); ref++) {
     out << **ref;
     if (ref+1 != order_by.end())
@@ -357,18 +357,19 @@ void window_function::out(std::ostream &out)
 }
 
 window_function::window_function(prod *p, sqltype *type_constraint)
-  : value_expr(p)
+  : value_expr(p),partition_by(getAllocator<shared_ptr<column_reference>>()),
+  order_by(getAllocator<shared_ptr<column_reference>>())
 {
   match();
-  aggregate = make_shared<funcall>(this, type_constraint, true);
+  aggregate = make_alloc_shared<funcall>(this, type_constraint, true);
   type = aggregate->type;
-  partition_by.push_back(make_shared<column_reference>(this));
+  partition_by.push_back(make_alloc_shared<column_reference>(this));
   while(d6() > 4)
-    partition_by.push_back(make_shared<column_reference>(this));
+    partition_by.push_back(make_alloc_shared<column_reference>(this));
 
-  order_by.push_back(make_shared<column_reference>(this));
+  order_by.push_back(make_alloc_shared<column_reference>(this));
   while(d6() > 4)
-    order_by.push_back(make_shared<column_reference>(this));
+    order_by.push_back(make_alloc_shared<column_reference>(this));
 }
 
 bool window_function::allowed(prod *p)
