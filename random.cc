@@ -1,7 +1,7 @@
 #include "random.hh"
 
 namespace smith {
-  std::mt19937_64 rng;
+std::mt19937_64 rng;
 }
 
 int d6() {

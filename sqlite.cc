@@ -1,118 +1,108 @@
-#include <stdexcept>
+#include "sqlite.hh"
 #include <cassert>
 #include <cstring>
-#include "sqlite.hh"
 #include <iostream>
+#include <stdexcept>
 
 #ifndef HAVE_BOOST_REGEX
 #include <regex>
 #else
 #include <boost/regex.hpp>
 using boost::regex;
-using boost::smatch;
 using boost::regex_match;
+using boost::smatch;
 #endif
 
 using namespace std;
 
 static regex e_syntax("near \".*\": syntax error");
 static regex e_user_abort("callback requested query abort");
-  
-extern "C"  {
+
+extern "C" {
 #include <sqlite3.h>
 #include <unistd.h>
 }
 
-extern "C" int my_sqlite3_busy_handler(void *, int)
-{
-  throw std::runtime_error("sqlite3 timeout");
-}
+extern "C" int my_sqlite3_busy_handler(void *, int) { throw std::runtime_error("sqlite3 timeout"); }
 
-extern "C" int callback(void *arg, int argc, char **argv, char **azColName)
-{
+extern "C" int callback(void *arg, int argc, char **argv, char **azColName) {
   (void)arg;
 
   int i;
-  for(i=0; i<argc; i++){
+  for (i = 0; i < argc; i++) {
     printf("%s = %s\n", azColName[i], argv[i] ? argv[i] : "NULL");
   }
   printf("\n");
   return 0;
 }
 
-extern "C" int table_callback(void *arg, int argc, char **argv, char **azColName)
-{
-  (void) argc; (void) azColName;
-  auto tables = (vector<table> *)arg;
-  bool view = (string("view") == argv[0]);
+extern "C" int table_callback(void *arg, int argc, char **argv, char **azColName) {
+  (void)argc;
+  (void)azColName;
+  auto  tables = (vector<table> *)arg;
+  bool  view   = (string("view") == argv[0]);
   table tab(argv[2], "main", !view, !view);
   tables->push_back(tab);
   return 0;
 }
 
-extern "C" int column_callback(void *arg, int argc, char **argv, char **azColName)
-{
-  (void) argc; (void) azColName;
+extern "C" int column_callback(void *arg, int argc, char **argv, char **azColName) {
+  (void)argc;
+  (void)azColName;
   table *tab = (table *)arg;
   column c(argv[1], sqltype::get(argv[2]));
   tab->columns().push_back(c);
   return 0;
 }
 
-sqlite_connection::sqlite_connection(std::string &conninfo)
-{
-  assert(sqlite3_libversion_number()==SQLITE_VERSION_NUMBER);
-  assert(strcmp(sqlite3_sourceid(),SQLITE_SOURCE_ID)==0);
-  assert(strcmp(sqlite3_libversion(),SQLITE_VERSION)==0);
-  rc = sqlite3_open_v2(conninfo.c_str(), &db, SQLITE_OPEN_READWRITE|SQLITE_OPEN_URI, 0);
+sqlite_connection::sqlite_connection(std::string &conninfo) {
+  assert(sqlite3_libversion_number() == SQLITE_VERSION_NUMBER);
+  assert(strcmp(sqlite3_sourceid(), SQLITE_SOURCE_ID) == 0);
+  assert(strcmp(sqlite3_libversion(), SQLITE_VERSION) == 0);
+  rc = sqlite3_open_v2(conninfo.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_URI, 0);
   if (rc) {
     throw std::runtime_error(sqlite3_errmsg(db));
   }
 }
 
-void sqlite_connection::q(const char *query)
-{
+void sqlite_connection::q(const char *query) {
   rc = sqlite3_exec(db, query, callback, 0, &zErrMsg);
-  if( rc!=SQLITE_OK ){
+  if (rc != SQLITE_OK) {
     auto e = std::runtime_error(zErrMsg);
     sqlite3_free(zErrMsg);
     throw e;
   }
 }
 
-sqlite_connection::~sqlite_connection()
-{
+sqlite_connection::~sqlite_connection() {
   if (db)
     sqlite3_close(db);
 }
 
-schema_sqlite::schema_sqlite(std::string &conninfo, bool no_catalog)
-  : sqlite_connection(conninfo)
-{
-	std::string query = "SELECT * FROM main.sqlite_master where type in ('table', 'view')";
+schema_sqlite::schema_sqlite(std::string &conninfo, bool no_catalog) : sqlite_connection(conninfo) {
+  std::string query = "SELECT * FROM main.sqlite_master where type in ('table', 'view')";
 
-	if (no_catalog)
-		query+= " AND name NOT like 'sqlite_%%'";
-  
+  if (no_catalog)
+    query += " AND name NOT like 'sqlite_%%'";
+
   version = "SQLite " SQLITE_VERSION " " SQLITE_SOURCE_ID;
 
-//   sqlite3_busy_handler(db, my_sqlite3_busy_handler, 0);
+  //   sqlite3_busy_handler(db, my_sqlite3_busy_handler, 0);
   cerr << "Loading tables...";
 
   rc = sqlite3_exec(db, query.c_str(), table_callback, (void *)&tables, &zErrMsg);
-  if (rc!=SQLITE_OK) {
+  if (rc != SQLITE_OK) {
     auto e = std::runtime_error(zErrMsg);
     sqlite3_free(zErrMsg);
     throw e;
   }
 
-  if (!no_catalog)
-  {
-		// sqlite_master doesn't list itself, do it manually
-		table tab("sqlite_master", "main", false, false);
-		tables.push_back(tab);
+  if (!no_catalog) {
+    // sqlite_master doesn't list itself, do it manually
+    table tab("sqlite_master", "main", false, false);
+    tables.push_back(tab);
   }
-  
+
   cerr << "done." << endl;
 
   cerr << "Loading columns and constraints...";
@@ -123,7 +113,7 @@ schema_sqlite::schema_sqlite(std::string &conninfo, bool no_catalog)
     q += ");";
 
     rc = sqlite3_exec(db, q.c_str(), column_callback, (void *)&*t, &zErrMsg);
-    if (rc!=SQLITE_OK) {
+    if (rc != SQLITE_OK) {
       auto e = std::runtime_error(zErrMsg);
       sqlite3_free(zErrMsg);
       throw e;
@@ -132,7 +122,11 @@ schema_sqlite::schema_sqlite(std::string &conninfo, bool no_catalog)
 
   cerr << "done." << endl;
 
-#define BINOP(n,t) do {op o(#n,sqltype::get(#t),sqltype::get(#t),sqltype::get(#t)); register_operator(o); } while(0)
+#define BINOP(n, t)                                                                                                                                            \
+  do {                                                                                                                                                         \
+    op o(#n, sqltype::get(#t), sqltype::get(#t), sqltype::get(#t));                                                                                            \
+    register_operator(o);                                                                                                                                      \
+  } while (0)
 
   BINOP(||, TEXT);
   BINOP(*, INTEGER);
@@ -159,32 +153,36 @@ schema_sqlite::schema_sqlite(std::string &conninfo, bool no_catalog)
 
   BINOP(AND, INTEGER);
   BINOP(OR, INTEGER);
-  
-#define FUNC(n,r) do {							\
-    routine proc("", "", sqltype::get(#r), #n);				\
-    register_routine(proc);						\
-  } while(0)
 
-#define FUNC1(n,r,a) do {						\
-    routine proc("", "", sqltype::get(#r), #n);				\
-    proc.argtypes.push_back(sqltype::get(#a));				\
-    register_routine(proc);						\
-  } while(0)
+#define FUNC(n, r)                                                                                                                                             \
+  do {                                                                                                                                                         \
+    routine proc("", "", sqltype::get(#r), #n);                                                                                                                \
+    register_routine(proc);                                                                                                                                    \
+  } while (0)
 
-#define FUNC2(n,r,a,b) do {						\
-    routine proc("", "", sqltype::get(#r), #n);				\
-    proc.argtypes.push_back(sqltype::get(#a));				\
-    proc.argtypes.push_back(sqltype::get(#b));				\
-    register_routine(proc);						\
-  } while(0)
+#define FUNC1(n, r, a)                                                                                                                                         \
+  do {                                                                                                                                                         \
+    routine proc("", "", sqltype::get(#r), #n);                                                                                                                \
+    proc.argtypes.push_back(sqltype::get(#a));                                                                                                                 \
+    register_routine(proc);                                                                                                                                    \
+  } while (0)
 
-#define FUNC3(n,r,a,b,c) do {						\
-    routine proc("", "", sqltype::get(#r), #n);				\
-    proc.argtypes.push_back(sqltype::get(#a));				\
-    proc.argtypes.push_back(sqltype::get(#b));				\
-    proc.argtypes.push_back(sqltype::get(#c));				\
-    register_routine(proc);						\
-  } while(0)
+#define FUNC2(n, r, a, b)                                                                                                                                      \
+  do {                                                                                                                                                         \
+    routine proc("", "", sqltype::get(#r), #n);                                                                                                                \
+    proc.argtypes.push_back(sqltype::get(#a));                                                                                                                 \
+    proc.argtypes.push_back(sqltype::get(#b));                                                                                                                 \
+    register_routine(proc);                                                                                                                                    \
+  } while (0)
+
+#define FUNC3(n, r, a, b, c)                                                                                                                                   \
+  do {                                                                                                                                                         \
+    routine proc("", "", sqltype::get(#r), #n);                                                                                                                \
+    proc.argtypes.push_back(sqltype::get(#a));                                                                                                                 \
+    proc.argtypes.push_back(sqltype::get(#b));                                                                                                                 \
+    proc.argtypes.push_back(sqltype::get(#c));                                                                                                                 \
+    register_routine(proc);                                                                                                                                    \
+  } while (0)
 
   FUNC(last_insert_rowid, INTEGER);
   FUNC(random, INTEGER);
@@ -225,12 +223,12 @@ schema_sqlite::schema_sqlite(std::string &conninfo, bool no_catalog)
   FUNC3(substr, TEXT, TEXT, INTEGER, INTEGER);
   FUNC3(replace, TEXT, TEXT, TEXT, TEXT);
 
-
-#define AGG(n,r, a) do {						\
-    routine proc("", "", sqltype::get(#r), #n);				\
-    proc.argtypes.push_back(sqltype::get(#a));				\
-    register_aggregate(proc);						\
-  } while(0)
+#define AGG(n, r, a)                                                                                                                                           \
+  do {                                                                                                                                                         \
+    routine proc("", "", sqltype::get(#r), #n);                                                                                                                \
+    proc.argtypes.push_back(sqltype::get(#a));                                                                                                                 \
+    register_aggregate(proc);                                                                                                                                  \
+  } while (0)
 
   AGG(avg, INTEGER, INTEGER);
   AGG(avg, REAL, REAL);
@@ -246,12 +244,12 @@ schema_sqlite::schema_sqlite(std::string &conninfo, bool no_catalog)
   AGG(total, REAL, REAL);
 
   booltype = sqltype::get("INTEGER");
-  inttype = sqltype::get("INTEGER");
+  inttype  = sqltype::get("INTEGER");
 
   internaltype = sqltype::get("internal");
-  arraytype = sqltype::get("ARRAY");
+  arraytype    = sqltype::get("ARRAY");
 
-  true_literal = "1";
+  true_literal  = "1";
   false_literal = "0";
 
   generate_indexes();
@@ -259,35 +257,31 @@ schema_sqlite::schema_sqlite(std::string &conninfo, bool no_catalog)
   db = 0;
 }
 
-dut_sqlite::dut_sqlite(std::string &conninfo)
-  : sqlite_connection(conninfo)
-{
-  q("PRAGMA main.auto_vacuum = 2");
-}
+dut_sqlite::dut_sqlite(std::string &conninfo) : sqlite_connection(conninfo) { q("PRAGMA main.auto_vacuum = 2"); }
 
-extern "C" int dut_callback(void *arg, int argc, char **argv, char **azColName)
-{
-  (void) arg; (void) argc; (void) argv; (void) azColName;
+extern "C" int dut_callback(void *arg, int argc, char **argv, char **azColName) {
+  (void)arg;
+  (void)argc;
+  (void)argv;
+  (void)azColName;
   return SQLITE_ABORT;
 }
 
-void dut_sqlite::test(const std::string &stmt)
-{
+void dut_sqlite::test(const std::string &stmt) {
   alarm(6);
   rc = sqlite3_exec(db, stmt.c_str(), dut_callback, 0, &zErrMsg);
-  if( rc!=SQLITE_OK ){
+  if (rc != SQLITE_OK) {
     try {
       if (regex_match(zErrMsg, e_syntax))
-	throw dut::syntax(zErrMsg);
+        throw dut::syntax(zErrMsg);
       else if (regex_match(zErrMsg, e_user_abort)) {
-	sqlite3_free(zErrMsg);
-	return;
-      } else 
-	throw dut::failure(zErrMsg);
+        sqlite3_free(zErrMsg);
+        return;
+      } else
+        throw dut::failure(zErrMsg);
     } catch (dut::failure &e) {
       sqlite3_free(zErrMsg);
       throw;
     }
   }
 }
-

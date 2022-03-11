@@ -3,16 +3,16 @@
 #ifndef DUMP_HH
 #define DUMP_HH
 
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <string>
 
-#include "prod.hh"
 #include "log.hh"
+#include "prod.hh"
 
 struct graphml_dumper : prod_visitor {
   std::ostream &o;
-  virtual void visit(struct prod *p);
+  virtual void  visit(struct prod *p);
   graphml_dumper(std::ostream &out);
   std::string id(prod *p);
   std::string type(struct prod *p);
@@ -20,7 +20,7 @@ struct graphml_dumper : prod_visitor {
 };
 
 struct ast_logger : logger {
-  int queries = 0;
+  int          queries = 0;
   virtual void generated(prod &query);
 };
 
