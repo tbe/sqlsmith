@@ -49,6 +49,8 @@ struct cerr_logger : stats_collecting_logger {
 /// logger to postgres database
 struct pqxx_logger : stats_collecting_logger {
   long                              id;
+  // TODO: is a shared_ptr to a postgresql connection useful? Can this connection
+  //  be used in a save manner from multiple locations?
   std::shared_ptr<pqxx::connection> c;
   pqxx_logger(std::string target, std::string conninfo, struct schema &s);
   virtual void generated(prod &query);

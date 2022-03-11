@@ -193,6 +193,7 @@ funcall::funcall(prod *p, sqltype *type_constraint, bool agg) : value_expr(p), i
               : (4 < d6()) ? p->scope->schema->routines_returning_type
                            : p->scope->schema->parameterless_routines_returning_type;
 
+// TODO: aaaaa, goto ....
 retry:
 
   if (!type_constraint) {
@@ -327,7 +328,7 @@ void window_function::out(std::ostream &out) {
 
 window_function::window_function(prod *p, sqltype *type_constraint) : value_expr(p) {
   match();
-  aggregate = make_shared<funcall>(this, type_constraint, true);
+  aggregate = make_unique<funcall>(this, type_constraint, true);
   type      = aggregate->type;
   partition_by.push_back(make_shared<column_reference>(this));
   while (d6() > 4)

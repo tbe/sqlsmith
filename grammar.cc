@@ -66,7 +66,7 @@ table_sample::table_sample(prod *p) : table_ref(p) {
 void table_sample::out(std::ostream &out) { out << t->ident() << " as " << refs[0]->ident() << " tablesample " << method << " (" << percent << ") "; }
 
 table_subquery::table_subquery(prod *p, bool lateral) : table_ref(p), is_lateral(lateral) {
-  query                 = make_shared<query_spec>(this, scope, lateral);
+  query                 = make_unique<query_spec>(this, scope, lateral);
   string    alias       = scope->stmt_uid("subq");
   relation *aliased_rel = &query->select_list->derived_table;
   refs.push_back(make_shared<aliased_relation>(alias, aliased_rel));
@@ -120,9 +120,9 @@ void simple_join_cond::out(std::ostream &out) { out << condition; }
 
 expr_join_cond::expr_join_cond(prod *p, table_ref &lhs, table_ref &rhs) : join_cond(p, lhs, rhs), joinscope(p->scope) {
   scope = &joinscope;
-  for (auto ref : lhs.refs)
-    joinscope.refs.push_back(&*ref);
-  for (auto ref : rhs.refs)
+  for (auto &ref : lhs.refs)
+    joinscope.refs.push_back(&*ref); // TODO: we use a non-refcounted ptr here. WTF?
+  for (auto &ref : rhs.refs)
     joinscope.refs.push_back(&*ref);
   search = bool_expr::factory(this);
 }
@@ -143,9 +143,9 @@ joined_table::joined_table(prod *p) : table_ref(p) {
     type = "right";
   }
 
-  for (auto ref : lhs->refs)
+  for (auto &ref : lhs->refs)
     refs.push_back(ref);
-  for (auto ref : rhs->refs)
+  for (auto &ref : rhs->refs)
     refs.push_back(ref);
 }
 
@@ -178,7 +178,7 @@ void from_clause::out(std::ostream &out) {
 
 from_clause::from_clause(prod *p) : prod(p) {
   reflist.push_back(table_ref::factory(this));
-  for (auto r : reflist.back()->refs)
+  for (auto &r : reflist.back()->refs)
     scope->refs.push_back(&*r);
 
   while (d6() > 5) {
@@ -186,7 +186,7 @@ from_clause::from_clause(prod *p) : prod(p) {
     if (!impedance::matched(typeid(lateral_subquery)))
       break;
     reflist.push_back(make_shared<lateral_subquery>(this));
-    for (auto r : reflist.back()->refs)
+    for (auto &r : reflist.back()->refs)
       scope->refs.push_back(&*r);
   }
 }
@@ -257,6 +257,7 @@ struct for_update_verify : prod_visitor {
 };
 
 select_for_update::select_for_update(prod *p, struct scope *s, bool lateral) : query_spec(p, s, lateral) {
+  // TODO: use string_views here
   static const char *modes[] = {
       "update",
       "share",
@@ -459,7 +460,7 @@ retry:
     scope->tables.push_back(pick);
   } while (d6() > 3);
   try {
-    query = make_shared<query_spec>(this, scope);
+    query = make_unique<query_spec>(this, scope);
   } catch (runtime_error &e) {
     retry();
     goto retry;
@@ -482,10 +483,10 @@ void common_table_expression::out(std::ostream &out) {
 
 merge_stmt::merge_stmt(prod *p, struct scope *s, table *v) : modifying_stmt(p, s, v) {
   match();
-  target_table_ = make_shared<target_table>(this, victim);
+  target_table_ = make_unique<target_table>(this, victim);
   data_source   = table_ref::factory(this);
   //   join_condition = join_cond::factory(this, *target_table_, *data_source);
-  join_condition = make_shared<simple_join_cond>(this, *target_table_, *data_source);
+  join_condition = make_unique<simple_join_cond>(this, *target_table_, *data_source);
 
   /* Put data_source into scope but not target_table.  Visibility of
      the latter varies depending on kind of when clause. */

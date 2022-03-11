@@ -13,6 +13,7 @@
 #include "prod.hh"
 
 using std::shared_ptr;
+using std::unique_ptr;
 
 struct table_ref : prod {
   vector<shared_ptr<named_relation>> refs;
@@ -49,7 +50,7 @@ private:
 struct table_subquery : table_ref {
   bool                          is_lateral;
   virtual void                  out(std::ostream &out);
-  shared_ptr<struct query_spec> query;
+  unique_ptr<struct query_spec> query;
   table_subquery(prod *p, bool lateral = false);
   virtual ~table_subquery();
   virtual void accept(prod_visitor *v);
@@ -75,6 +76,8 @@ struct simple_join_cond : join_cond {
 
 struct expr_join_cond : join_cond {
   struct scope          joinscope;
+  // TODO: this shared_ptr is not passed out of it's scope here, make this a unqiue_ptr
+  //  For that, we have to adopt the factories first
   shared_ptr<bool_expr> search;
   expr_join_cond(prod *p, table_ref &lhs, table_ref &rhs);
   virtual void out(std::ostream &out);
@@ -90,6 +93,7 @@ struct joined_table : table_ref {
   std::string           type;
   std::string           alias;
   virtual std::string   ident() { return alias; }
+  // TODO: another bunch of shared_ptr that can be unique, if the factories are updated
   shared_ptr<table_ref> lhs;
   shared_ptr<table_ref> rhs;
   shared_ptr<join_cond> condition;
@@ -132,6 +136,7 @@ struct query_spec : prod {
   std::string                    set_quantifier;
   shared_ptr<struct from_clause> from_clause;
   shared_ptr<struct select_list> select_list;
+  // TODO: change this to unique_ptr
   shared_ptr<bool_expr>          search;
   std::string                    limit_clause;
   struct scope                   myscope;
@@ -151,6 +156,7 @@ struct select_for_update : query_spec {
   select_for_update(prod *p, struct scope *s, bool lateral = 0);
 };
 
+// TODO: prepare_stmt is not used, why?
 struct prepare_stmt : prod {
   query_spec   q;
   static long  seq;
@@ -172,6 +178,7 @@ struct modifying_stmt : prod {
 };
 
 struct delete_stmt : modifying_stmt {
+  // TODO: change this to unique_ptr
   shared_ptr<bool_expr> search;
   delete_stmt(prod *p, struct scope *s, table *v);
   virtual ~delete_stmt() {}
@@ -187,6 +194,8 @@ struct delete_stmt : modifying_stmt {
 };
 
 struct delete_returning : delete_stmt {
+  // TODO: i see no reason, why this should be a ptr at all
+  //  there is no polymorphism involved and it is not passed by ptr
   shared_ptr<struct select_list> select_list;
   delete_returning(prod *p, struct scope *s, table *victim = 0);
   virtual void out(std::ostream &out) {
@@ -226,6 +235,8 @@ struct set_list : prod {
 };
 
 struct upsert_stmt : insert_stmt {
+  // TODO: i see no reason, why this should be a ptr at all
+  //  there is no polymorphism involved and it is not passed by ptr
   shared_ptr<struct set_list> set_list;
   string                      constraint;
   shared_ptr<bool_expr>       search;
@@ -244,7 +255,10 @@ struct upsert_stmt : insert_stmt {
 };
 
 struct update_stmt : modifying_stmt {
+  // TODO: make this a unique_ptr
   shared_ptr<bool_expr>       search;
+  // TODO: i see no reason, why this should be a ptr at all
+  //  there is no polymorphism involved and it is not passed by ptr
   shared_ptr<struct set_list> set_list;
   update_stmt(prod *p, struct scope *s, table *victim = 0);
   virtual ~update_stmt() {}
@@ -257,6 +271,7 @@ struct update_stmt : modifying_stmt {
 
 struct when_clause : prod {
   bool                  matched;
+  // TODO: make this a unique_ptr
   shared_ptr<bool_expr> condition;
   //   shared_ptr<prod> merge_action;
   when_clause(struct merge_stmt *p);
@@ -267,6 +282,8 @@ struct when_clause : prod {
 };
 
 struct when_clause_update : when_clause {
+  // TODO: i see no reason, why this should be a ptr at all
+  //  there is no polymorphism involved and it is not passed by ptr
   shared_ptr<struct set_list> set_list;
   struct scope                myscope;
   when_clause_update(struct merge_stmt *p);
@@ -285,9 +302,10 @@ struct when_clause_insert : when_clause {
 
 struct merge_stmt : modifying_stmt {
   merge_stmt(prod *p, struct scope *s, table *victim = 0);
-  shared_ptr<table_ref>           target_table_;
+  unique_ptr<table_ref>           target_table_;
+  // TODO: make this a unique_ptr
   shared_ptr<table_ref>           data_source;
-  shared_ptr<join_cond>           join_condition;
+  unique_ptr<join_cond>           join_condition;
   vector<shared_ptr<when_clause>> clauselist;
   virtual ~merge_stmt() {}
   virtual void out(std::ostream &out);
@@ -295,6 +313,8 @@ struct merge_stmt : modifying_stmt {
 };
 
 struct update_returning : update_stmt {
+  // TODO: i see no reason, why this should be a ptr at all
+  //  there is no polymorphism involved and it is not passed by ptr
   shared_ptr<struct select_list> select_list;
   update_returning(prod *p, struct scope *s, table *victim = 0);
   virtual void out(std::ostream &out) {
@@ -313,7 +333,7 @@ shared_ptr<prod> statement_factory(struct scope *s);
 
 struct common_table_expression : prod {
   vector<shared_ptr<prod>>           with_queries;
-  shared_ptr<prod>                   query;
+  unique_ptr<prod>                   query;
   vector<shared_ptr<named_relation>> refs;
   struct scope                       myscope;
   virtual void                       out(std::ostream &out);

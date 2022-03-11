@@ -11,6 +11,7 @@
 #include <string>
 
 using std::shared_ptr;
+using std::unique_ptr;
 using std::string;
 using std::vector;
 
@@ -23,6 +24,7 @@ struct value_expr : prod {
 };
 
 struct case_expr : value_expr {
+  // TODO: make these unique_ptr
   shared_ptr<value_expr> condition;
   shared_ptr<value_expr> true_expr;
   shared_ptr<value_expr> false_expr;
@@ -46,6 +48,7 @@ struct funcall : value_expr {
 };
 
 struct atomic_subselect : value_expr {
+  // TODO: no raw pointers ....
   table   *tab;
   column  *col;
   int      offset;
@@ -102,6 +105,7 @@ struct truth_value : bool_expr {
 struct null_predicate : bool_expr {
   virtual ~null_predicate() {}
   const char            *negate;
+  // TODO: make this a unique_ptr
   shared_ptr<value_expr> expr;
   null_predicate(prod *p) : bool_expr(p) {
     negate = ((d6() < 4) ? "not " : "");
@@ -115,6 +119,8 @@ struct null_predicate : bool_expr {
 };
 
 struct exists_predicate : bool_expr {
+  // TODO: i see no reason, why this should be a ptr at all
+  //  there is no polymorphism involved and it is not passed by ptr
   shared_ptr<struct query_spec> subquery;
   virtual ~exists_predicate() {}
   exists_predicate(prod *p);
@@ -123,6 +129,7 @@ struct exists_predicate : bool_expr {
 };
 
 struct bool_binop : bool_expr {
+  // TODO: make these unique_ptr
   shared_ptr<value_expr> lhs, rhs;
   bool_binop(prod *p) : bool_expr(p) {}
   virtual void out(std::ostream &out) = 0;
@@ -167,7 +174,9 @@ struct window_function : value_expr {
   window_function(prod *p, sqltype *type_constraint);
   vector<shared_ptr<column_reference>> partition_by;
   vector<shared_ptr<column_reference>> order_by;
-  shared_ptr<funcall>                  aggregate;
+  // TODO: i see no reason, why this should be a ptr at all
+  //  there is no polymorphism involved and it is not passed by ptr
+  unique_ptr<funcall>                  aggregate;
   static bool                          allowed(prod *pprod);
   virtual void                         accept(prod_visitor *v) {
     v->visit(this);
