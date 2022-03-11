@@ -4,7 +4,10 @@
 #ifndef EXPR_HH
 #define EXPR_HH
 
+#include "relmodel.hh"
 #include "prod.hh"
+#include "schema.hh"
+
 #include <string>
 
 using std::shared_ptr;
