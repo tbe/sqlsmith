@@ -40,10 +40,11 @@ using namespace std;
 
 using namespace std::chrono;
 
+#include <cstdlib>
+#include <csignal>
+
 extern "C" {
-#include <stdlib.h>
 #include <unistd.h>
-#include <signal.h>
 }
 
 /* make the cerr logger globally accessible so we can emit one last
