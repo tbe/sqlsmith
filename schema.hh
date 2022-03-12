@@ -52,13 +52,13 @@ struct schema {
       s.tables.push_back(&t);
     s.schema = this;
   }
-  virtual void register_operator(op &o) {
+  void register_operator(op &o) {
     operators.push_back(o);
     typekey t(o.left, o.right, o.result);
     index.insert(std::pair<typekey, op>(t, o));
   }
-  virtual void        register_routine(routine &r) { routines.push_back(r); }
-  virtual void        register_aggregate(routine &r) { aggregates.push_back(r); }
+  void        register_routine(routine &r) { routines.push_back(r); }
+  void        register_aggregate(routine &r) { aggregates.push_back(r); }
   virtual op_iterator find_operator(sqltype *left, sqltype *right, sqltype *res) {
     typekey t(left, right, res);
     auto    cons = index.equal_range(t);

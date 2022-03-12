@@ -35,12 +35,12 @@ struct prod {
   virtual void out(std::ostream &out) = 0;
   /// Check with the impedance matching code whether this production
   /// has been blacklisted and throw an exception.
-  virtual void match();
+  void match();
   /// Visitor pattern for walking the AST.  Make sure you visit all
   /// child production when deriving classes.
   virtual void accept(prod_visitor *v) { v->visit(this); }
   /// Report a "failed to generate" error.
-  virtual void fail(const char *reason);
+  void fail(const char *reason);
   /// Increase the retry count and throw an exception when retry_limit
   /// is exceeded.
   void retry();

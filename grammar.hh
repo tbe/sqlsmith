@@ -174,7 +174,7 @@ struct modifying_stmt : prod {
   struct scope myscope;
   modifying_stmt(prod *p, struct scope *s, struct table *victim = 0);
   //   shared_ptr<modifying_stmt> modifying_stmt::factory(prod *p, struct scope *s);
-  virtual void pick_victim();
+  void pick_victim();
 };
 
 struct delete_stmt : modifying_stmt {
