@@ -65,17 +65,16 @@ table_sample::table_sample(prod *p) : table_ref(p) {
 
 void table_sample::out(std::ostream &out) { out << t->ident() << " as " << refs[0]->ident() << " tablesample " << method << " (" << percent << ") "; }
 
-table_subquery::table_subquery(prod *p, bool lateral) : table_ref(p), is_lateral(lateral) {
-  query                 = make_unique<query_spec>(this, scope, lateral);
+table_subquery::table_subquery(prod *p, bool lateral) : table_ref(p), is_lateral(lateral), query(this,scope,lateral) {
   string    alias       = scope->stmt_uid("subq");
-  relation *aliased_rel = &query->select_list->derived_table;
+  relation *aliased_rel = &query.select_list->derived_table;
   refs.push_back(make_shared<aliased_relation>(alias, aliased_rel));
 }
 
 table_subquery::~table_subquery() {}
 
 void table_subquery::accept(prod_visitor *v) {
-  query->accept(v);
+  query.accept(v);
   v->visit(this);
 }
 
@@ -160,7 +159,7 @@ void joined_table::out(std::ostream &out) {
 void table_subquery::out(std::ostream &out) {
   if (is_lateral)
     out << "lateral ";
-  out << "(" << *query << ") as " << refs[0]->ident();
+  out << "(" << query << ") as " << refs[0]->ident();
 }
 
 void from_clause::out(std::ostream &out) {
@@ -287,13 +286,16 @@ void select_for_update::out(std::ostream &out) {
 
 query_spec::query_spec(prod *p, struct scope *s, bool lateral) : prod(p), myscope(s) {
   scope         = &myscope;
+  // TODO: should be already set here
+  //  AND: why to we first initialize a own scope and then store a pointer to it in scope?
+  //  why not override scope to begin with?
   scope->tables = s->tables;
 
   if (lateral)
     scope->refs = s->refs;
 
-  from_clause = make_shared<struct from_clause>(this);
-  select_list = make_shared<struct select_list>(this);
+  from_clause = make_unique<struct from_clause>(this);
+  select_list = make_unique<struct select_list>(this);
 
   set_quantifier = (d100() == 1) ? "distinct" : "";
 
@@ -327,11 +329,6 @@ modifying_stmt::modifying_stmt(prod *p, struct scope *s, table *victim) : prod(p
 delete_stmt::delete_stmt(prod *p, struct scope *s, table *v) : modifying_stmt(p, s, v) {
   scope->refs.push_back(victim);
   search = bool_expr::factory(this);
-}
-
-delete_returning::delete_returning(prod *p, struct scope *s, table *victim) : delete_stmt(p, s, victim) {
-  match();
-  select_list = make_shared<struct select_list>(this);
 }
 
 insert_stmt::insert_stmt(prod *p, struct scope *s, table *v) : modifying_stmt(p, s, v) {
@@ -386,27 +383,17 @@ void set_list::out(std::ostream &out) {
   }
 }
 
-update_stmt::update_stmt(prod *p, struct scope *s, table *v) : modifying_stmt(p, s, v) {
+update_stmt::update_stmt(prod *p, struct scope *s, table *v) : modifying_stmt(p, s, v), set_list_(this, victim) {
   scope->refs.push_back(victim);
-  search   = bool_expr::factory(this);
-  set_list = make_shared<struct set_list>(this, victim);
+  search = bool_expr::factory(this);
 }
 
-void update_stmt::out(std::ostream &out) { out << "update " << victim->ident() << *set_list; }
-
-update_returning::update_returning(prod *p, struct scope *s, table *v) : update_stmt(p, s, v) {
-  match();
-
-  select_list = make_shared<struct select_list>(this);
-}
-
-upsert_stmt::upsert_stmt(prod *p, struct scope *s, table *v) : insert_stmt(p, s, v) {
+upsert_stmt::upsert_stmt(prod *p, struct scope *s, table *v) : insert_stmt(p, s, v), set_list_(this, victim) {
   match();
 
   if (!victim->constraints.size())
     fail("need table w/ constraint for upsert");
 
-  set_list   = std::make_shared<struct set_list>(this, victim);
   search     = bool_expr::factory(this);
   constraint = random_pick(victim->constraints);
 }
@@ -539,24 +526,22 @@ void when_clause::accept(prod_visitor *v) {
   condition->accept(v);
 }
 
-when_clause_update::when_clause_update(merge_stmt *p) : when_clause(p), myscope(p->scope) {
+when_clause_update::when_clause_update(merge_stmt *p) : when_clause(p), set_list_(this, p->victim), myscope(p->scope) {
   myscope.tables = scope->tables;
   myscope.refs   = scope->refs;
   scope          = &myscope;
   scope->refs.push_back(&*(p->target_table_->refs[0]));
-
-  set_list = std::make_shared<struct set_list>(this, p->victim);
 }
 
 void when_clause_update::out(std::ostream &out) {
   out << "WHEN MATCHED AND " << *condition;
   indent(out);
-  out << " THEN UPDATE " << *set_list;
+  out << " THEN UPDATE " << set_list_;
 }
 
 void when_clause_update::accept(prod_visitor *v) {
   v->visit(this);
-  set_list->accept(v);
+  set_list_.accept(v);
 }
 
 when_clause_insert::when_clause_insert(struct merge_stmt *p) : when_clause(p) {

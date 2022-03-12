@@ -107,7 +107,7 @@ shared_ptr<bool_expr> bool_expr::factory(prod *p) {
   return factory(p);
 }
 
-exists_predicate::exists_predicate(prod *p) : bool_expr(p) { subquery = make_shared<query_spec>(this, scope); }
+exists_predicate::exists_predicate(prod *p) : bool_expr(p) { subquery = make_unique<query_spec>(this, scope); }
 
 void exists_predicate::accept(prod_visitor *v) {
   v->visit(this);
@@ -307,7 +307,7 @@ void atomic_subselect::out(std::ostream &out) {
 
 void window_function::out(std::ostream &out) {
   indent(out);
-  out << *aggregate << " over (partition by ";
+  out << aggregate << " over (partition by ";
 
   for (auto ref = partition_by.begin(); ref != partition_by.end(); ref++) {
     out << **ref;
@@ -326,10 +326,9 @@ void window_function::out(std::ostream &out) {
   out << ")";
 }
 
-window_function::window_function(prod *p, sqltype *type_constraint) : value_expr(p) {
+window_function::window_function(prod *p, sqltype *type_constraint) : value_expr(p), aggregate(this, type_constraint, true) {
   match();
-  aggregate = make_unique<funcall>(this, type_constraint, true);
-  type      = aggregate->type;
+  type      = aggregate.type;
   partition_by.push_back(make_shared<column_reference>(this));
   while (d6() > 4)
     partition_by.push_back(make_shared<column_reference>(this));

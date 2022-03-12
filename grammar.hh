@@ -47,62 +47,17 @@ private:
   double percent;
 };
 
-struct table_subquery : table_ref {
-  bool                          is_lateral;
-  virtual void                  out(std::ostream &out);
-  unique_ptr<struct query_spec> query;
-  table_subquery(prod *p, bool lateral = false);
-  virtual ~table_subquery();
-  virtual void accept(prod_visitor *v);
-};
-
-struct lateral_subquery : table_subquery {
-  lateral_subquery(prod *p) : table_subquery(p, true) {}
-};
-
-struct join_cond : prod {
-  static shared_ptr<join_cond> factory(prod *p, table_ref &lhs, table_ref &rhs);
-  join_cond(prod *p, table_ref &lhs, table_ref &rhs) : prod(p) {
-    (void)lhs;
-    (void)rhs;
-  }
-};
-
-struct simple_join_cond : join_cond {
-  std::string condition;
-  simple_join_cond(prod *p, table_ref &lhs, table_ref &rhs);
+struct select_list : prod {
+  std::vector<shared_ptr<value_expr>> value_exprs;
+  relation                            derived_table;
+  int                                 columns = 0;
+  select_list(prod *p);
   virtual void out(std::ostream &out);
-};
-
-struct expr_join_cond : join_cond {
-  struct scope          joinscope;
-  // TODO: this shared_ptr is not passed out of it's scope here, make this a unqiue_ptr
-  //  For that, we have to adopt the factories first
-  shared_ptr<bool_expr> search;
-  expr_join_cond(prod *p, table_ref &lhs, table_ref &rhs);
-  virtual void out(std::ostream &out);
+  ~select_list() {}
   virtual void accept(prod_visitor *v) {
-    search->accept(v);
     v->visit(this);
-  }
-};
-
-struct joined_table : table_ref {
-  virtual void out(std::ostream &out);
-  joined_table(prod *p);
-  std::string           type;
-  std::string           alias;
-  virtual std::string   ident() { return alias; }
-  // TODO: another bunch of shared_ptr that can be unique, if the factories are updated
-  shared_ptr<table_ref> lhs;
-  shared_ptr<table_ref> rhs;
-  shared_ptr<join_cond> condition;
-  virtual ~joined_table() {}
-  virtual void accept(prod_visitor *v) {
-    lhs->accept(v);
-    rhs->accept(v);
-    condition->accept(v);
-    v->visit(this);
+    for (auto p : value_exprs)
+      p->accept(v);
   }
 };
 
@@ -118,29 +73,16 @@ struct from_clause : prod {
   }
 };
 
-struct select_list : prod {
-  std::vector<shared_ptr<value_expr>> value_exprs;
-  relation                            derived_table;
-  int                                 columns = 0;
-  select_list(prod *p);
-  virtual void out(std::ostream &out);
-  ~select_list() {}
-  virtual void accept(prod_visitor *v) {
-    v->visit(this);
-    for (auto p : value_exprs)
-      p->accept(v);
-  }
-};
-
 struct query_spec : prod {
   std::string                    set_quantifier;
-  shared_ptr<struct from_clause> from_clause;
-  shared_ptr<struct select_list> select_list;
+  // TODO: the from_clause requires data that is set later in the constructor, so we keep this a ptr for now
+  unique_ptr<struct from_clause> from_clause;
+  unique_ptr<struct select_list> select_list;
   // TODO: change this to unique_ptr
-  shared_ptr<bool_expr>          search;
-  std::string                    limit_clause;
-  struct scope                   myscope;
-  virtual void                   out(std::ostream &out);
+  shared_ptr<bool_expr> search;
+  std::string           limit_clause;
+  struct scope          myscope;
+  virtual void          out(std::ostream &out);
   query_spec(prod *p, struct scope *s, bool lateral = 0);
   virtual void accept(prod_visitor *v) {
     v->visit(this);
@@ -149,6 +91,70 @@ struct query_spec : prod {
     search->accept(v);
   }
 };
+
+struct table_subquery : table_ref {
+  bool                          is_lateral;
+  virtual void                  out(std::ostream &out);
+  query_spec query;
+  table_subquery(prod *p, bool lateral = false);
+  virtual ~table_subquery();
+  virtual void accept(prod_visitor *v);
+};
+
+struct lateral_subquery : table_subquery {
+  lateral_subquery(prod *p) : table_subquery(p, true) {}
+};
+
+struct join_cond : prod {
+  static shared_ptr<join_cond> factory(prod *p, table_ref &lhs, table_ref &rhs);
+  join_cond(prod *p, table_ref &lhs, table_ref &rhs) : prod(p) {
+    // TODO: why does this constructor have this parameters at all, if not required?
+    (void)lhs;
+    (void)rhs;
+  }
+};
+
+struct simple_join_cond : join_cond {
+  std::string condition;
+  simple_join_cond(prod *p, table_ref &lhs, table_ref &rhs);
+  virtual void out(std::ostream &out);
+};
+
+struct expr_join_cond : join_cond {
+  struct scope joinscope;
+  // TODO: this shared_ptr is not passed out of it's scope here, make this a unqiue_ptr
+  //  For that, we have to adopt the factories first
+  shared_ptr<bool_expr> search;
+  expr_join_cond(prod *p, table_ref &lhs, table_ref &rhs);
+  virtual void out(std::ostream &out);
+  virtual void accept(prod_visitor *v) {
+    search->accept(v);
+    v->visit(this);
+  }
+};
+
+struct joined_table : table_ref {
+  virtual void out(std::ostream &out);
+  joined_table(prod *p);
+  std::string         type;
+  std::string         alias;
+  virtual std::string ident() { return alias; }
+  // TODO: another bunch of shared_ptr that can be unique, if the factories are updated
+  shared_ptr<table_ref> lhs;
+  shared_ptr<table_ref> rhs;
+  shared_ptr<join_cond> condition;
+  virtual ~joined_table() {}
+  virtual void accept(prod_visitor *v) {
+    lhs->accept(v);
+    rhs->accept(v);
+    condition->accept(v);
+    v->visit(this);
+  }
+};
+
+
+
+
 
 struct select_for_update : query_spec {
   const char  *lockmode;
@@ -194,18 +200,16 @@ struct delete_stmt : modifying_stmt {
 };
 
 struct delete_returning : delete_stmt {
-  // TODO: i see no reason, why this should be a ptr at all
-  //  there is no polymorphism involved and it is not passed by ptr
-  shared_ptr<struct select_list> select_list;
-  delete_returning(prod *p, struct scope *s, table *victim = 0);
+  select_list select_list_;
+  delete_returning(prod *p, struct scope *s, table *victim = 0) : delete_stmt(p, s, victim), select_list_(this) { match(); }
   virtual void out(std::ostream &out) {
     delete_stmt::out(out);
-    out << std::endl << "returning " << *select_list;
+    out << std::endl << "returning " << select_list_;
   }
   virtual void accept(prod_visitor *v) {
     v->visit(this);
     search->accept(v);
-    select_list->accept(v);
+    select_list_.accept(v);
   }
 };
 
@@ -235,20 +239,18 @@ struct set_list : prod {
 };
 
 struct upsert_stmt : insert_stmt {
-  // TODO: i see no reason, why this should be a ptr at all
-  //  there is no polymorphism involved and it is not passed by ptr
-  shared_ptr<struct set_list> set_list;
-  string                      constraint;
-  shared_ptr<bool_expr>       search;
+  set_list              set_list_;
+  string                constraint;
+  shared_ptr<bool_expr> search;
   upsert_stmt(prod *p, struct scope *s, table *v = 0);
   virtual void out(std::ostream &out) {
     insert_stmt::out(out);
     out << " on conflict on constraint " << constraint << " do update ";
-    out << *set_list << " where " << *search;
+    out << set_list_ << " where " << *search;
   }
   virtual void accept(prod_visitor *v) {
     insert_stmt::accept(v);
-    set_list->accept(v);
+    set_list_.accept(v);
     search->accept(v);
   }
   virtual ~upsert_stmt() {}
@@ -256,13 +258,11 @@ struct upsert_stmt : insert_stmt {
 
 struct update_stmt : modifying_stmt {
   // TODO: make this a unique_ptr
-  shared_ptr<bool_expr>       search;
-  // TODO: i see no reason, why this should be a ptr at all
-  //  there is no polymorphism involved and it is not passed by ptr
-  shared_ptr<struct set_list> set_list;
+  shared_ptr<bool_expr> search;
+  set_list set_list_;
   update_stmt(prod *p, struct scope *s, table *victim = 0);
   virtual ~update_stmt() {}
-  virtual void out(std::ostream &out);
+  virtual void out(std::ostream &out) { out << "update " << victim->ident() << set_list_; };
   virtual void accept(prod_visitor *v) {
     v->visit(this);
     search->accept(v);
@@ -270,7 +270,7 @@ struct update_stmt : modifying_stmt {
 };
 
 struct when_clause : prod {
-  bool                  matched;
+  bool matched;
   // TODO: make this a unique_ptr
   shared_ptr<bool_expr> condition;
   //   shared_ptr<prod> merge_action;
@@ -282,10 +282,8 @@ struct when_clause : prod {
 };
 
 struct when_clause_update : when_clause {
-  // TODO: i see no reason, why this should be a ptr at all
-  //  there is no polymorphism involved and it is not passed by ptr
-  shared_ptr<struct set_list> set_list;
-  struct scope                myscope;
+  set_list     set_list_;
+  struct scope myscope;
   when_clause_update(struct merge_stmt *p);
   virtual ~when_clause_update() {}
   virtual void out(std::ostream &out);
@@ -302,7 +300,7 @@ struct when_clause_insert : when_clause {
 
 struct merge_stmt : modifying_stmt {
   merge_stmt(prod *p, struct scope *s, table *victim = 0);
-  unique_ptr<table_ref>           target_table_;
+  unique_ptr<table_ref> target_table_;
   // TODO: make this a unique_ptr
   shared_ptr<table_ref>           data_source;
   unique_ptr<join_cond>           join_condition;
@@ -313,19 +311,17 @@ struct merge_stmt : modifying_stmt {
 };
 
 struct update_returning : update_stmt {
-  // TODO: i see no reason, why this should be a ptr at all
-  //  there is no polymorphism involved and it is not passed by ptr
-  shared_ptr<struct select_list> select_list;
-  update_returning(prod *p, struct scope *s, table *victim = 0);
+  select_list select_list_;
+  update_returning(prod *p, struct scope *s, table *victim = 0) : update_stmt(p, s, victim), select_list_(this) { match(); };
   virtual void out(std::ostream &out) {
     update_stmt::out(out);
-    out << std::endl << "returning " << *select_list;
+    out << std::endl << "returning " << select_list_;
   }
   virtual void accept(prod_visitor *v) {
     v->visit(this);
     search->accept(v);
-    set_list->accept(v);
-    select_list->accept(v);
+    set_list_.accept(v);
+    select_list_.accept(v);
   }
 };
 
