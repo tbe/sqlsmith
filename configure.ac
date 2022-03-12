@@ -7,7 +7,7 @@ AC_PROG_CXX
 AX_LIB_POSTGRESQL()
 
 PKG_CHECK_MODULES(LIBPQXX, libpqxx < 7.0,
-        [AX_CXX_COMPILE_STDCXX_11(noext,mandatory)],
+        [AX_CXX_COMPILE_STDCXX_17(noext,mandatory)],
         [PKG_CHECK_MODULES([LIBPQXX], [libpqxx >= 7.0],
                  [libpqxx7=yes],
                  []
